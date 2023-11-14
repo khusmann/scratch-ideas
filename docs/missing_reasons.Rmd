@@ -167,6 +167,8 @@ missing_df <- string_df %>%
   rename_with(\(x) str_c(x, "_missing"))
 
 better_df <- bind_cols(values_df, missing_df)
+
+better_df
 ```
 
 This allows us to do all of the value and missing reasons parsing a single time,
@@ -263,6 +265,9 @@ and `col_types` around with us anywhere, because the value columns have their
 type information in the dataframe (as they should!), and we know if we're
 working with a missing reason if we're in a *_missing column. (In effect, it
 enables us to interact with dataframe values as tagged union types)
+
+With this simple example, the difference may seem small, but as operations & data
+become more complex, this approach saves many headaches!
 
 ## `readr` feature request
 

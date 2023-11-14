@@ -1685,7 +1685,20 @@ missing_df &lt;- string_df %&gt;%
   ) %&gt;%
   rename_with(\(x) str_c(x, &quot;_missing&quot;))
 
-better_df &lt;- bind_cols(values_df, missing_df)</code></pre>
+better_df &lt;- bind_cols(values_df, missing_df)
+
+better_df</code></pre>
+<pre><code>## # A tibble: 7 × 6
+##   person_id   age favorite_color person_id_missing age_missing      
+##       &lt;int&gt; &lt;dbl&gt; &lt;fct&gt;          &lt;chr&gt;             &lt;chr&gt;            
+## 1         1    20 BLUE           &lt;NA&gt;              &lt;NA&gt;             
+## 2         1    NA BLUE           &lt;NA&gt;              _DECLINED_ANSWER_
+## 3         2    21 RED            &lt;NA&gt;              &lt;NA&gt;             
+## 4         3    30 &lt;NA&gt;           &lt;NA&gt;              &lt;NA&gt;             
+## 5         4    31 &lt;NA&gt;           &lt;NA&gt;              &lt;NA&gt;             
+## 6         5    41 RED            &lt;NA&gt;              &lt;NA&gt;             
+## 7         6    50 &lt;NA&gt;           &lt;NA&gt;              &lt;NA&gt;             
+## # ℹ 1 more variable: favorite_color_missing &lt;chr&gt;</code></pre>
 <p>This allows us to do all of the value and missing reasons parsing a
 single time, and then use the structure of the data to accomplish all
 the same tasks as before… without having to constantly check for missing
@@ -1795,6 +1808,9 @@ anywhere, because the value columns have their type information in the
 dataframe (as they should!), and we know if we’re working with a missing
 reason if we’re in a *_missing column. (In effect, it enables us to
 interact with dataframe values as tagged union types)</p>
+<p>With this simple example, the difference may seem small, but as
+operations &amp; data become more complex, this approach saves many
+headaches!</p>
 </div>
 <div id="readr-feature-request" class="section level2">
 <h2><code>readr</code> feature request</h2>
