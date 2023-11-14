@@ -1,0 +1,403 @@
+---
+title: "Working with Missing Reasons in the Tidyverse"
+author: "Kyle Husmann"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Background
+
+In many datasets, reasons for missing values are interlaced with data as codes
+or strings. For example:
+
+```{r}
+na_codes_csv <- "
+person_id,age,favorite_color
+1,20,BLUE
+1,-99,BLUE
+2,21,RED
+3,30,-98
+4,31,-99
+5,41,RED
+6,50,-98
+"
+
+na_strings_csv <- "
+person_id,age,favorite_color
+1,20,BLUE
+1,_DECLINED_ANSWER_,BLUE
+2,21,RED
+3,30,_TECHNICAL_ERROR_
+4,31,_DECLINED_ANSWER_
+5,41,RED
+6,50,_TECHNICAL_ERROR_
+"
+```
+
+Presently, it is easy to convert these values to NA when loading via
+`read_delim` et al.:
+
+```{r}
+read_csv(na_codes_csv, na=c("-99", "-98"))
+
+read_csv(na_strings_csv, na=c("_DECLINED_ANSWER_", "_TECHNICAL_ERROR_"))
+```
+
+Challenges arise, however, when we want to utilize these missing reasons while 
+data wrangling. For example, consider the following things we might want to do:
+
+1. Create a sample that only includes rows where individuals declined to answer
+at least one item.
+
+2. Find the distribution of reasons for individuals missing the "favorite_color"
+item.
+
+3. Find the average age for individuals that had technical errors reporting
+their favorite color.
+
+4. Find the average age for individuals that are missing a report of their
+favorite color, *for each missing reason*
+
+Because we're wanting to work with missing reasons, the `na` option in 
+`read_csv` isn't useful anymore... instead, we need to load our CSVs
+our CSVs as strings, perform manipulations, mask out the missing reasons
+(if necessary), and then type_convert back to values:
+
+```{r}
+string_df <- read_csv(na_strings_csv, col_types="c")
+
+na_values <- c("_DECLINED_ANSWER_", "_TECHNICAL_ERROR_")
+
+col_types <- cols(
+  person_id = col_integer(),
+  age = col_number(),
+  favorite_color = col_factor(levels=c("RED", "BLUE")),
+)
+
+# 1. Create a sample that only includes rows where individuals declined to asnwer
+# items.
+
+string_df %>%
+  filter(
+    if_any(everything(), \(x) x == "_DECLINED_ANSWER_")
+  ) %>%
+  type_convert(
+    col_types=col_types,
+    na=na_values,
+  )
+
+# 2. Find the distribution of reasons for individuals missing the "favorite_color"
+# item.
+
+string_df %>%
+  mutate(
+    across(
+      everything(),
+      \(x) if_else(x %in% na_values, x, NA_character_)
+    )
+  ) %>%
+  count(favorite_color)
+
+# 3. Find the average age for individuals that had technical errors reporting
+# their favorite color.
+
+string_df %>%
+  filter(
+    favorite_color == "_TECHNICAL_ERROR_",
+  ) %>%
+  type_convert(
+    col_types=col_types,
+    na=na_values,
+  ) %>%
+  summarize(
+    age = mean(age, na.rm=TRUE)
+  )
+
+# 4. Find the average age for individuals that are missing a report of their
+# favorite color, *for each missing reason*
+
+string_df %>%
+  mutate(
+    favorite_color = if_else(
+      favorite_color %in% na_values,
+      favorite_color,
+      NA_character_,
+    ),
+    age = parse_number(age, na = na_values),
+  ) %>%
+  summarize(
+    age = mean(age, na.rm=T),
+    .by=favorite_color,
+  )
+```
+
+Although the above code works, it's not pretty. Because our missing reasons
+are a different type from our columns, we have to keep making string comparisons
+and value casts in order to get the result we want. It means we have to keep the 
+`na_values` and `col_types` vars hanging around, and apply them at the right
+times and in the right orders to accomplish our desired tasks.
+
+## An alternative approach
+
+An alternative approach is to put values and missing reasons into separate 
+columns:
+
+```{r}
+values_df <- string_df %>%
+  type_convert(
+    col_types=col_types,
+    na=na_values,
+  )
+
+missing_df <- string_df %>%
+  mutate(
+    across(
+      everything(),
+      \(x) if_else(x %in% na_values, x, NA_character_)
+    )
+  ) %>%
+  rename_with(\(x) str_c(x, "_missing"))
+
+better_df <- bind_cols(values_df, missing_df)
+```
+
+This allows us to do all of the value and missing reasons parsing a single time,
+and then use the structure of the data to accomplish all the same tasks as
+before... without having to constantly check for missing reasons and cast value
+types:
+
+```{r}
+# 1. Create a sample that only includes rows where individuals declined to answer
+# at least one item.
+
+# Compare to:
+# string_df %>%
+#   filter(
+#     if_any(everything(), \(x) x == "_DECLINED_ANSWER_")
+#   ) %>%
+#   type_convert(
+#     col_types=col_types,
+#     na=na_values,
+#   )
+
+better_df %>%
+  filter(
+    if_any(ends_with("_missing"), \(x) x == "_DECLINED_ANSWER_")
+  )
+
+
+# 2. Find the distribution of reasons for individuals missing the "favorite_color"
+# item.
+
+# Compare to:
+# string_df %>%
+#   mutate(
+#     across(
+#       everything(),
+#       \(x) if_else(x %in% na_values, x, NA_character_)
+#     )
+#   ) %>%
+#   count(favorite_color)
+
+better_df %>%
+  count(favorite_color_missing)
+
+# 3. Find the average age for individuals that had technical errors reporting
+# their favorite color.
+
+# Compare to:
+# string_df %>%
+#   filter(
+#     favorite_color == "_TECHNICAL_ERROR_",
+#   ) %>%
+#   type_convert(
+#     col_types=col_types,
+#     na=na_values,
+#   ) %>%
+#   summarize(
+#     age = mean(age, na.rm=TRUE)
+#   )
+
+better_df %>%
+  filter(favorite_color_missing == "_TECHNICAL_ERROR_") %>%
+  summarize(
+    age = mean(age, na.rm=T)
+  )
+
+# 4. Find the average age for individuals that are missing a report of their
+# favorite color, *for each missing reason*
+
+# Compare to:
+# string_df %>%
+#   mutate(
+#     favorite_color = if_else(
+#       favorite_color %in% na_values,
+#       favorite_color,
+#       NA_character_,
+#     ),
+#     age = parse_number(age, na = na_values),
+#   ) %>%
+#   summarize(
+#     age = mean(age, na.rm=T),
+#     .by=favorite_color,
+#   )
+
+better_df %>%
+  summarize(
+    age = mean(age, na.rm=T),
+    .by = favorite_color_missing,
+  )
+```
+
+The resulting code is MUCH easier to read and no longer littered with type
+conversions and missingness checks. We also don't need to carry `na_values`
+and `col_types` around with us anywhere, because the value columns have their
+type information in the dataframe (as they should!), and we know if we're
+working with a missing reason if we're in a *_missing column. (In effect, it
+enables us to interact with dataframe values as tagged union types)
+
+## `readr` feature request
+
+Given how common it is for formats to interlace values and missing reasons, I 
+think it would be worth giving `readr` the option to load missing reasons in
+addition to values. I propose adding a `channels` argument (or something 
+similar) to `read_delim` et al. that would give users a flexible API around 
+loading values alongside missing reasons. Here's a rough example of how it might
+look:
+
+(Note this is just a rough, example implementation to illustrate the idea,
+not optimized at all!)
+
+```{r}
+read_delim_ext <- function(file, delim, na = c("", "NA"), col_types = NULL, 
+                           channels = "values", ...) {
+  default_suffixes <- c(
+    values = "_values",
+    missing = "_missing"
+  )
+  
+  if (is.null(names(channels))) {
+    names(channels) <- rep_along(channels, "")
+  }
+ 
+  if (length(channels) == 1 && names(channels) == "") {
+    channel_suffixes <- ""
+  } else {
+    channel_suffixes <- map2_vec(
+      channels,
+      names(channels),
+      \(x, n) if (n == "") { default_suffixes[[x]] } else { x }
+    )
+  } 
+ 
+  channel_names <- map2_vec(
+    channels,
+    names(channels),
+    \(x, n) if_else(n == "", x, n)
+  )
+  
+  channels <- set_names(channel_suffixes, channel_names)
+  
+  string_df <- read_delim(
+    file,
+    delim,
+    col_types = cols(.default=col_character()),
+    ...
+  )
+  
+  result <- list()
+  
+  if ("values" %in% channel_names) {
+    values_df <- string_df %>%
+       type_convert(
+         col_types=col_types,
+         na=na,
+       ) %>%
+       rename_with(\(x) str_c(x, channels[["values"]]))
+    result <- append(result, values_df)
+  }
+  
+  if ("missing" %in% channel_names) {
+    missing_df <- string_df %>%
+      mutate(
+        across(
+          everything(),
+          \(x) if_else(x %in% na, x, NA_character_)
+        )
+      ) %>%
+      rename_with(\(x) str_c(x, channels[["missing"]]))
+    result <- append(result, missing_df)
+  }  
+  bind_cols(result)
+}
+```
+
+Here's how it would be used:
+
+```{r}
+# Load values only (default behavior, same as before):
+
+read_delim_ext(
+  na_strings_csv,
+  delim=",",
+  na=na_values,
+  col_types=col_types
+  # channels = "values" <- implicit default
+)
+
+# Load missing reasons:
+
+read_delim_ext(
+  na_strings_csv,
+  delim=",",
+  na=na_values,
+  col_types=col_types,
+  channels="missing",
+)
+
+# Load values AND missing reasons:
+
+read_delim_ext(
+  na_strings_csv,
+  delim=",",
+  na=na_values,
+  col_types=col_types,
+  channels=c("values", "missing"),
+)
+
+# Load values and missing reasons, but without a suffix on values:
+
+read_delim_ext(
+  na_strings_csv,
+  delim=",",
+  na=na_values,
+  col_types=col_types,
+  channels=c(values="", "missing"),
+)
+
+
+# Load values and missing reasons with custom column suffixes:
+
+read_delim_ext(
+  na_strings_csv,
+  delim=",",
+  na=na_values,
+  col_types=col_types,
+  channels=c(values="_v", missing="_m"),
+)
+```
+
+As you can see, when loading a single channel (`values` or `missing`), no
+suffixes are appended to column names. When both channels are loaded, columns
+get suffixes that can be customized by making the `channels` arg a named vector.
+
+This is just a first pass at this idea -- I'd appreciate other thoughts &
+feedback!
