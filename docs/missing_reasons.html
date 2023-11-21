@@ -11,7 +11,7 @@
 
 <meta name="author" content="Kyle Husmann" />
 
-<meta name="date" content="2023-11-13" />
+<meta name="date" content="2023-11-21" />
 
 <title>Working with Missing Reasons in the Tidyverse</title>
 
@@ -1488,7 +1488,7 @@ border-radius: 0px;
 <h1 class="title toc-ignore">Working with Missing Reasons in the
 Tidyverse</h1>
 <h4 class="author">Kyle Husmann</h4>
-<h4 class="date">2023-11-13</h4>
+<h4 class="date">2023-11-21</h4>
 
 </div>
 
@@ -1496,8 +1496,11 @@ Tidyverse</h1>
 <div id="background" class="section level2">
 <h2>Background</h2>
 <p>In many datasets, reasons for missing values are interlaced with data
-as codes or strings. For example:</p>
-<pre class="r"><code>na_codes_csv &lt;- &quot;
+as codes or strings. Presently, it is easy to convert these values to NA
+when loading via <code>read_delim</code> et al. For example:</p>
+<pre class="r"><code>library(tidyverse)
+
+na_codes_csv &lt;- &quot;
 person_id,age,favorite_color
 1,20,BLUE
 1,-99,BLUE
@@ -1517,10 +1520,9 @@ person_id,age,favorite_color
 4,31,_DECLINED_ANSWER_
 5,41,RED
 6,50,_TECHNICAL_ERROR_
-&quot;</code></pre>
-<p>Presently, it is easy to convert these values to NA when loading via
-<code>read_delim</code> et al.:</p>
-<pre class="r"><code>read_csv(na_codes_csv, na=c(&quot;-99&quot;, &quot;-98&quot;))</code></pre>
+&quot;
+
+read_csv(na_codes_csv, na=c(&quot;-99&quot;, &quot;-98&quot;))</code></pre>
 <pre><code>## Rows: 7 Columns: 3
 ## ── Column specification ────────────────────────────────────────────────────────
 ## Delimiter: &quot;,&quot;

@@ -10,15 +10,19 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
+options(tidyverse.quiet = TRUE)
+options(warn=-1)
 ```
 
 ## Background
 
 In many datasets, reasons for missing values are interlaced with data as codes
-or strings. For example:
+or strings. Presently, it is easy to convert these values to NA when loading via
+`read_delim` et al. For example:
 
 ```{r}
+library(tidyverse)
+
 na_codes_csv <- "
 person_id,age,favorite_color
 1,20,BLUE
@@ -40,12 +44,7 @@ person_id,age,favorite_color
 5,41,RED
 6,50,_TECHNICAL_ERROR_
 "
-```
 
-Presently, it is easy to convert these values to NA when loading via
-`read_delim` et al.:
-
-```{r}
 read_csv(na_codes_csv, na=c("-99", "-98"))
 
 read_csv(na_strings_csv, na=c("_DECLINED_ANSWER_", "_TECHNICAL_ERROR_"))
