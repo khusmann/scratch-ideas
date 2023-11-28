@@ -85,8 +85,8 @@ tibble(
 I've put together this vignette to demo a proof of concept implementation of
 value labels for `frictionless-r`. My goal has been a simple,
 ergonomic API for working with value (and missing) labels in frictionless
-that generalizes the concepts introduced by SAS, Stata, SPSS, et al., is type
-safe, and can be used with tidyverse wrangling functions in powerfully
+that generalizes the concepts introduced by SAS, Stata, SPSS, et al., and can 
+be used with tidyverse wrangling functions in powerfully
 expressive ways. Luckily there was a lot of existing work in this area I was able
 to build on!
 
