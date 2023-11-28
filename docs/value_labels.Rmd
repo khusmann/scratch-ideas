@@ -1,0 +1,298 @@
+---
+title: "Labelled Columns with Frictionless-R"
+author: "Kyle Husmann"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(jsonlite)
+
+datapackage_txt <- '
+{
+  "name": "value-label-examples",
+  "resources": [
+    {
+      "name": "example1",
+      "path": "example1.csv",
+      "profile": "tabular-data-resource",
+      "schema": {
+        "fields": [
+          {
+            "name": "day_scale",
+            "description": "On a scale from 1-5, how was your day?",
+            "type": "integer",
+            "constraints": {
+              "enum": [1, 2, 3, 4, 5]
+            },
+            "enumOrdered": true,
+            "enumLabels": {
+              "1": "Very bad",
+              "2": "Bad",
+              "3": "Neutral",
+              "4": "Good",
+              "5": "Very good"
+            }
+          },
+          {
+            "name": "pain_scale",
+            "description": "On a scale from 0-9, how do you rate your pain?",
+            "type": "integer",
+            "constraints": {
+              "enum": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            },
+            "enumOrdered": true,
+            "enumLabels": {
+              "0": "No pain",
+              "9": "Worst pain imaginable"
+            }
+          },
+          {
+            "name": "pick_a_number",
+            "description": "Pick a number!",
+            "type": "integer",
+            "enumLabels": {
+              "7": "Magic number"
+            }
+          }         
+        ]
+      }
+    }
+  ]
+}
+'
+
+cat(datapackage_txt, file="example-pkg/datapackage.json")
+
+set.seed(9001)
+
+tibble(
+  day_scale = round(runif(10, 1, 5)),
+  pain_scale = round(runif(10, 0, 9)),
+  pick_a_number = c(runif(4, 1, 20), 7, runif(5, 1, 20))
+) %>%
+  write_csv("example-pkg/example1.csv")
+
+```
+
+## Introduction
+
+I've put together this vignette to demo a proof of concept implementation of
+value labels for `frictionless-r`. My goal has been a simple,
+ergonomic API for working with value (and missing) labels in frictionless
+that generalizes the concepts introduced by SAS, Stata, SPSS, et al., is type
+safe, and can be used with tidyverse wrangling functions in powerfully
+expressive ways. Luckily there was a lot of existing work in this area I was able
+to build on!
+
+NOTE THAT THIS IS VERY FAR FROM BEING PRODUCTION READY! There's a lot to still
+implement (e.g. ordered factors). Even more, I'm still learning all
+the quirks of R's class system and how `tidyverse` augments it. This is a proof-
+of-concept designed to explore these ideas and get some early feedback on these
+directions that I'm exploring.
+
+For all the examples in this text, I will use the example datapackage loaded
+below (and [linked here](example-pkg/datapackage.json)):
+
+```{r}
+library(tidyverse)
+library(frictionless)
+library(jsonlite)
+library(haven)
+
+pkg <- read_package("example-pkg/datapackage.json")
+```
+
+## Background
+
+Value labels are extra metadata
+attached to certain values of a variable in a dataset. For example, a question
+on a survey asking an individual to rate how good their day was on a scale from
+1-5 might include labels alongside the number to help "calibrate" the numeric
+responses for the respondent (e.g. 1 = Very bad, 2 = Bad, 3 = Neutral, 4 = Good,
+5 = Very good). Sometimes these labels are referred to as "anchors" for the scale,
+especially when they label the scale's extrema (e.g. a 10-point pain scale with
+0 = No pain, and 9 = Worst pain imaginable).
+
+In the [recently accepted frictionless extension](https://github.com/frictionlessdata/specs/pull/844),
+proposed by Phil Schumm, value labels can be added to any variable type via the
+`enumLabels` schema field property. The `enumOrdered` property is was
+also introduced to distinguish ordinal vs categorical variables. With these
+properties, the aforementioned "good day scale" and "pain scale" can be
+represented as follows:
+
+```{r}
+get_schema(pkg, "example1")$fields[[1]] %>%
+  toJSON(pretty=TRUE, auto_unbox=TRUE)
+
+
+get_schema(pkg, "example1")$fields[[2]] %>%
+  toJSON(pretty=TRUE, auto_unbox=TRUE)
+```
+
+Although the `enumLabels` property has `enum` in its name, it is not limited to
+types with enum constraints -- it can be used to provide labels for any type.
+for example, the following field definition is also valid:
+
+```{r}
+get_schema(pkg, "example1")$fields[[3]] %>%
+  toJSON(pretty=TRUE, auto_unbox=TRUE)
+```
+
+(By contrast, the `enumOrdered` only applies to fields with `enum` constraints.
+I think this is a little confusing, and might be worth revisiting in the
+standard extension at some point.)
+
+## Frictionless-r implementation
+
+Here's what it looks like when the above three fields are loaded into a
+dataframe with my frictionless-r implementation (found in my fork on the
+[`categorical-ext` branch](https://github.com/khusmann/frictionless-r/tree/categorical-ext)):
+
+```{r}
+(example1 <- read_resource(pkg, "example1"))
+```
+
+As you can see, the `tibble` displays both values and their labels. You can't 
+see it in the rendered Rmd, but in the R console, the labels are a grayed out
+color to help differentiate them from the actual values.
+
+This behavior was inspired by the `haven` package in the `tidyverse` universe.
+`haven` provides the `haven_labelled` class that enables numeric and character
+vectors to be augmented by labels. A limitation of the `haven_labelled` class,
+however, is that it can only be used with numeric and character vectors,
+because it was originally designed as a compatibility layer for the variable
+types found in SPSS, Stata, and SAS.
+
+This behavior is fine for loading numeric fields with labels in frictionless
+schemas, like `pick_a_number`. For labeled enum types, like `day_scale` and 
+`pain_scale` however, conversion to labelled numerics does not preserve the
+`enum` constraint in its type. As you can see above, to address this, I extended
+the `haven_labelled` class to also support factors as a base type (`fct+lbl`).
+
+The advantage of this approach is that when we remove the labels using 
+`haven::zap_labels`, we get factor types for these enum fields, instead of
+raw numeric:
+
+```{r}
+zap_labels(example1)
+```
+
+This means that all the levels of the enum described in the schema are properly
+present in the factor levels, even if they don't all show up in the data:
+
+```{r}
+levels(zap_labels(example1)$day_scale)
+```
+
+Had we used only a labelled numeric, removing the labels would have given us a
+raw numeric type that we'd have to turn into a factor... and would have required
+another visit to the field's schema to know what the levels were supposed to be.
+Instead, by loading all this information up front into the custom type,
+manipulations become much more fluid.
+
+## Working with value labels
+
+`haven` provides `as_factor` for converting values to labels. By default, it
+will keep the original values around as levels:
+
+```{r}
+as_factor(example1)
+```
+
+Alternatively, unlabeled values can be marked NA with the `levels="labels`
+option:
+
+```{r}
+as_factor(example1, levels="labels")
+```
+
+Between `zap_labels()` and `as_factor()` working with values or labels becomes a breeze:
+
+```{r}
+example1 %>%
+  filter(pain_scale == "9") # Note -- this is a string comparison for now, but I plan to fix later
+
+example1 %>%
+  filter(as_factor(pain_scale) == "Worst pain imaginable")
+```
+
+More examples:
+
+```{r}
+example1 %>%
+  group_by(day_scale) %>%
+  summarize(
+    avg_pain = mean(as.numeric(as.character(pain_scale))) # Note -- this is awkward for now (see above comment about strings)
+  )
+```
+
+This is especially nice for graphing. (Note the x axis labels):
+
+```{r}
+example1 %>%
+  ggplot(aes(day_scale)) +
+  geom_histogram(stat="count")
+
+example1 %>%
+  ggplot(aes(as_factor(day_scale))) +
+  geom_histogram(stat="count")
+```
+
+The downside of `as_factor` and `zap_labels` is they lose the label attribute
+information. I've been experimenting with an alternative approach that allows
+for round-trip conversions between labels and values. For now, I'm calling
+the function `apply_labels()`:
+
+```{r}
+apply_labels(example1)
+
+# Round trip
+apply_labels(apply_labels(example1))
+```
+
+## Variable labels
+
+As an added bonus, `haven_labelled` also stores "variable labels", a string
+of metadata to hold information about fields. We can have `frictionless-r` load
+metadata into this attribute as well. In the present implementation, I have it
+grab data from the `description` field property, so this information is
+displayed when viewing the table with `View()`.
+
+Other packages like [`codebookr`](https://brad-cannell.github.io/codebookr/) and
+[`labelled`](https://cran.r-project.org/web/packages/labelled/vignettes/intro_labelled.html)
+use this info to generate codebooks:
+
+```{r}
+library(labelled)
+library(gt)
+generate_dictionary(example1) %>%
+  gt()
+```
+
+I'm working on my own interactive codebook generator as well, stay tuned!
+
+## Missing values
+
+Value labels in SAS, Stata, SPSS sometimes add metadata to missing values as
+well (e.g. missing reasons). Although the `haven` package provides additional
+functionality for working with labelled missingness, its approach is very much
+tied to the specific quriks of SAS, Stata, and SPSS'
+implementations.
+
+I have found that simply loading missingness as separate columns provides an
+implementation-agnostic way of loading and working with labelled missingness.
+I describe this [approach in a separate vignette](missing_reasons.html).
+
+This approach for working with missing reasons is highly synergistic with the
+value labels I've described in this document. It gives us a simple general
+interface by which we can work with SAS, SPSS, and Stata formatted data in R,
+and easily convert between their styles of missingness representations. I will
+talk about this more in a future vignette.
+
+Thanks for reading this far! I appreciate your thoughts and feedback.
