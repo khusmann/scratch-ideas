@@ -148,6 +148,9 @@ get_schema(pkg, "example1")$fields[[3]] %>%
 I think this is a little confusing, and might be worth revisiting in the
 standard extension at some point.)
 
+(Note that my implementation here does not yet support `enumOrdered`, but it
+should be easy to add.)
+
 ## Frictionless-r implementation
 
 Here's what it looks like when the above three fields are loaded into a
@@ -162,7 +165,7 @@ As you can see, the `tibble` displays both values and their labels. You can't
 see it in the rendered Rmd, but in the R console, the labels are a grayed out
 color to help differentiate them from the actual values.
 
-This behavior was inspired by the `haven` package in the `tidyverse` universe.
+This behavior accomplished by way of the `haven` package in the `tidyverse` universe.
 `haven` provides the `haven_labelled` class that enables numeric and character
 vectors to be augmented by labels. A limitation of the `haven_labelled` class,
 however, is that it can only be used with numeric and character vectors,
@@ -173,7 +176,8 @@ This behavior is fine for loading numeric fields with labels in frictionless
 schemas, like `pick_a_number`. For labeled enum types, like `day_scale` and 
 `pain_scale` however, conversion to labelled numerics does not preserve the
 `enum` constraint in its type. As you can see above, to address this, I extended
-the `haven_labelled` class to also support factors as a base type (`fct+lbl`).
+the `haven_labelled` class into a new `frictionless_labelled_fct` class that
+also support factors as a base type (denoted by the `fct+lbl` tibble header).
 
 The advantage of this approach is that when we remove the labels using 
 `haven::zap_labels`, we get factor types for these enum fields, instead of

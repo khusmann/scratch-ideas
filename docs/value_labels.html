@@ -1587,6 +1587,8 @@ definition is also valid:</p>
 with <code>enum</code> constraints. I think this is a little confusing,
 and might be worth revisiting in the standard extension at some
 point.)</p>
+<p>(Note that my implementation here does not yet support
+<code>enumOrdered</code>, but it should be easy to add.)</p>
 </div>
 <div id="frictionless-r-implementation" class="section level2">
 <h2>Frictionless-r implementation</h2>
@@ -1612,8 +1614,8 @@ branch</a>):</p>
 their labels. You can’t see it in the rendered Rmd, but in the R
 console, the labels are a grayed out color to help differentiate them
 from the actual values.</p>
-<p>This behavior was inspired by the <code>haven</code> package in the
-<code>tidyverse</code> universe. <code>haven</code> provides the
+<p>This behavior accomplished by way of the <code>haven</code> package
+in the <code>tidyverse</code> universe. <code>haven</code> provides the
 <code>haven_labelled</code> class that enables numeric and character
 vectors to be augmented by labels. A limitation of the
 <code>haven_labelled</code> class, however, is that it can only be used
@@ -1625,8 +1627,9 @@ frictionless schemas, like <code>pick_a_number</code>. For labeled enum
 types, like <code>day_scale</code> and <code>pain_scale</code> however,
 conversion to labelled numerics does not preserve the <code>enum</code>
 constraint in its type. As you can see above, to address this, I
-extended the <code>haven_labelled</code> class to also support factors
-as a base type (<code>fct+lbl</code>).</p>
+extended the <code>haven_labelled</code> class into a new
+<code>frictionless_labelled_fct</code> class that also support factors
+as a base type (denoted by the <code>fct+lbl</code> tibble header).</p>
 <p>The advantage of this approach is that when we remove the labels
 using <code>haven::zap_labels</code>, we get factor types for these enum
 fields, instead of raw numeric:</p>
